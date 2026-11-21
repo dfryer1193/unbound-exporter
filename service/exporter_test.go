@@ -14,18 +14,33 @@ import (
 
 type settings struct{ urls []string }
 
-func (settings) GetOpnsenseUrl() string          { return "https://router" } //nolint:revive,staticcheck // name set by mimir-generate
-func (settings) GetOpnsenseCertSha256() string   { return "" }
+func (settings) GetAdguardUrl() string           { return "https://router" } //nolint:revive,staticcheck // name set by mimir-generate
+func (settings) GetAdguardCertSha256() string    { return "" }
 func (settings) GetRouterName() string           { return "r" }
 func (settings) GetPollInterval() string         { return "10s" }
 func (settings) GetRequestTimeout() string       { return "1s" }
 func (s settings) GetVictorialogsUrls() []string { return s.urls }
 func (settings) GetBufferLimit() int64           { return 100000 }
 
-type source struct{ rows []models.Query }
+type source struct {
+	rows      []models.Query
+	lastSince time.Time
+}
 
-func (s *source) RecentQueries(context.Context, data.OPNsenseSettings) ([]models.Query, error) {
-	return s.rows, nil
+func (s *source) QueriesSince(
+	_ context.Context,
+	_ data.AdGuardSettings,
+	since time.Time,
+	_ int,
+) ([]models.Query, bool, error) {
+	s.lastSince = since
+	var out []models.Query
+	for _, x := range s.rows {
+		if x.Time.After(since) {
+			out = append(out, x)
+		}
+	}
+	return out, true, nil
 }
 
 type store struct {
@@ -52,6 +67,7 @@ func newExporter(urls ...string) (*service.Exporter, *source, *store) {
 	src := &source{}
 	st := &store{down: map[string]bool{}, written: map[string][]string{}}
 	e := service.NewExporter(settings{urls}, src, st, slog.New(slog.DiscardHandler))
+	e.SetNow(func() time.Time { return at(60) }) // the test log is "recent": within firstStartLookback
 	return e, src, st
 }
 
@@ -96,5 +112,16 @@ func TestExporterResumesAfterWhatIsAlreadyWritten(t *testing.T) {
 	e.Poll(t.Context())
 	if got := st.written["a"]; len(got) != 1 || got[0] != "new" {
 		t.Fatalf("got %v, want [new]", got)
+	}
+}
+
+func TestExporterAsksForEverythingSinceTheLastPollMinusOverlap(t *testing.T) {
+	e, src, _ := newExporter("a")
+	e.Start(t.Context())
+	src.rows = newestFirst(q(0, "x"), q(200, "y"))
+	e.Poll(t.Context())
+	e.Poll(t.Context())
+	if want := at(200).Add(-time.Minute); !src.lastSince.Equal(want) {
+		t.Fatalf("second poll asked since %v, want %v", src.lastSince, want)
 	}
 }

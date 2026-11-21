@@ -21,14 +21,14 @@ const ExporterConfigDisplayName = "Unbound exporter"
 
 // ExporterConfig holds the Items of the ExporterConfig Config.
 type ExporterConfig struct {
-	rwMux                sync.RWMutex
-	opnsense_url         string
-	opnsense_cert_sha256 string
-	router_name          string
-	poll_interval        string
-	request_timeout      string
-	victorialogs_urls    []string
-	buffer_limit         int64
+	rwMux               sync.RWMutex
+	adguard_url         string
+	adguard_cert_sha256 string
+	router_name         string
+	poll_interval       string
+	request_timeout     string
+	victorialogs_urls   []string
+	buffer_limit        int64
 }
 
 // NewExporterConfig returns the Config with every Item at its Default,
@@ -41,18 +41,18 @@ func NewExporterConfig(ctx context.Context, opts ...client.Option) *ExporterConf
 		DisplayName: ExporterConfigDisplayName,
 		Items: []client.ItemDefinition{
 			{
-				Name:        "opnsense_url",
+				Name:        "adguard_url",
 				Type:        "string",
-				Description: "Base URL of the OPNsense router's API. An IP, so it doesn't depend on the DNS it reads from.",
-				Default:     "https://192.168.90.1",
-				Set:         cfg.setOpnsenseUrl,
+				Description: "Base URL of AdGuard Home's API on the router (HTTPS). An IP, so it doesn't depend on the DNS it reads from.",
+				Default:     "https://192.168.90.1:3443",
+				Set:         cfg.setAdguardUrl,
 			},
 			{
-				Name:        "opnsense_cert_sha256",
+				Name:        "adguard_cert_sha256",
 				Type:        "string",
-				Description: "Hex sha256 of the router's self-signed web certificate (DER), which is trusted instead of a CA.",
-				Default:     "9129bb81d98937038387f56d4bc5062864bdd46b478fe11309604c86855521f1",
-				Set:         cfg.setOpnsenseCertSha256,
+				Description: "Hex sha256 of AdGuard Home's self-signed certificate (DER), which is trusted instead of a CA.",
+				Default:     "ba26f69227aa6709fbb532164734946155a72c0809106b434455541ef677db61",
+				Set:         cfg.setAdguardCertSha256,
 			},
 			{
 				Name:        "router_name",
@@ -64,14 +64,14 @@ func NewExporterConfig(ctx context.Context, opts ...client.Option) *ExporterConf
 			{
 				Name:        "poll_interval",
 				Type:        "string",
-				Description: "How often to read the router's query log, as a Go duration. The router keeps only its newest 1000 queries (about 5 minutes), so keep this well under that.",
+				Description: "How often to read AdGuard Home's query log, as a Go duration. Each poll pages back to the last one, so this sets latency, not completeness.",
 				Default:     "10s",
 				Set:         cfg.setPollInterval,
 			},
 			{
 				Name:        "request_timeout",
 				Type:        "string",
-				Description: "Timeout for each request to the router or VictoriaLogs, as a Go duration.",
+				Description: "Timeout for each request to AdGuard Home or VictoriaLogs, as a Go duration.",
 				Default:     "15s",
 				Set:         cfg.setRequestTimeout,
 			},
@@ -95,20 +95,20 @@ func NewExporterConfig(ctx context.Context, opts ...client.Option) *ExporterConf
 	return cfg
 }
 
-func (c *ExporterConfig) setOpnsenseUrl(val string) error {
+func (c *ExporterConfig) setAdguardUrl(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
-	c.opnsense_url = val
+	c.adguard_url = val
 
 	return nil
 }
 
-func (c *ExporterConfig) setOpnsenseCertSha256(val string) error {
+func (c *ExporterConfig) setAdguardCertSha256(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
-	c.opnsense_cert_sha256 = val
+	c.adguard_cert_sha256 = val
 
 	return nil
 }
@@ -168,22 +168,22 @@ func (c *ExporterConfig) setBufferLimit(val string) error {
 	return nil
 }
 
-// GetOpnsenseUrl returns the value of opnsense_url.
-// opnsense_url: Base URL of the OPNsense router's API. An IP, so it doesn't depend on the DNS it reads from.
-func (c *ExporterConfig) GetOpnsenseUrl() string {
+// GetAdguardUrl returns the value of adguard_url.
+// adguard_url: Base URL of AdGuard Home's API on the router (HTTPS). An IP, so it doesn't depend on the DNS it reads from.
+func (c *ExporterConfig) GetAdguardUrl() string {
 	c.rwMux.RLock()
 	defer c.rwMux.RUnlock()
 
-	return c.opnsense_url
+	return c.adguard_url
 }
 
-// GetOpnsenseCertSha256 returns the value of opnsense_cert_sha256.
-// opnsense_cert_sha256: Hex sha256 of the router's self-signed web certificate (DER), which is trusted instead of a CA.
-func (c *ExporterConfig) GetOpnsenseCertSha256() string {
+// GetAdguardCertSha256 returns the value of adguard_cert_sha256.
+// adguard_cert_sha256: Hex sha256 of AdGuard Home's self-signed certificate (DER), which is trusted instead of a CA.
+func (c *ExporterConfig) GetAdguardCertSha256() string {
 	c.rwMux.RLock()
 	defer c.rwMux.RUnlock()
 
-	return c.opnsense_cert_sha256
+	return c.adguard_cert_sha256
 }
 
 // GetRouterName returns the value of router_name.
@@ -196,7 +196,7 @@ func (c *ExporterConfig) GetRouterName() string {
 }
 
 // GetPollInterval returns the value of poll_interval.
-// poll_interval: How often to read the router's query log, as a Go duration. The router keeps only its newest 1000 queries (about 5 minutes), so keep this well under that.
+// poll_interval: How often to read AdGuard Home's query log, as a Go duration. Each poll pages back to the last one, so this sets latency, not completeness.
 func (c *ExporterConfig) GetPollInterval() string {
 	c.rwMux.RLock()
 	defer c.rwMux.RUnlock()
@@ -205,7 +205,7 @@ func (c *ExporterConfig) GetPollInterval() string {
 }
 
 // GetRequestTimeout returns the value of request_timeout.
-// request_timeout: Timeout for each request to the router or VictoriaLogs, as a Go duration.
+// request_timeout: Timeout for each request to AdGuard Home or VictoriaLogs, as a Go duration.
 func (c *ExporterConfig) GetRequestTimeout() string {
 	c.rwMux.RLock()
 	defer c.rwMux.RUnlock()

@@ -39,23 +39,25 @@ func NewVictoriaLogs() *VictoriaLogs {
 // logLine is one query as a VictoriaLogs JSON line. Every field is
 // searchable; _msg is the line shown in log views.
 type logLine struct {
-	Time          string `json:"_time"`
-	Msg           string `json:"_msg"`
-	Source        string `json:"source"`
-	Router        string `json:"router"`
-	Client        string `json:"client"`
-	Family        string `json:"family"`
-	Type          string `json:"type"`
-	Domain        string `json:"domain"`
-	Action        string `json:"action"`
-	Blocked       bool   `json:"blocked"`
-	AnswerSource  string `json:"answer_source"`
-	Blocklist     string `json:"blocklist,omitempty"`
-	RCode         string `json:"rcode"`
-	DNSSEC        string `json:"dnssec"`
-	Policy        string `json:"policy,omitempty"`
-	ResolveTimeMS int64  `json:"resolve_time_ms"`
-	TTL           int64  `json:"ttl"`
+	Time          string  `json:"_time"`
+	Msg           string  `json:"_msg"`
+	Source        string  `json:"source"`
+	Router        string  `json:"router"`
+	Client        string  `json:"client"`
+	ClientIP      string  `json:"client_ip"`
+	Family        string  `json:"family"`
+	Type          string  `json:"type"`
+	Domain        string  `json:"domain"`
+	Action        string  `json:"action"`
+	Blocked       bool    `json:"blocked"`
+	AnswerSource  string  `json:"answer_source"`
+	Blocklist     string  `json:"blocklist,omitempty"`
+	RCode         string  `json:"rcode"`
+	DNSSEC        string  `json:"dnssec"`
+	Rule          string  `json:"rule,omitempty"`
+	Reason        string  `json:"reason"`
+	ResolveTimeMS float64 `json:"resolve_time_ms"`
+	TTL           int64   `json:"ttl"`
 }
 
 // Write sends queries to the server at base (e.g. http://host:9428).
@@ -71,11 +73,12 @@ func (v *VictoriaLogs) Write(
 	for _, q := range queries {
 		domain := strings.TrimSuffix(q.Domain, ".")
 		line := logLine{
-			Time:          q.Time.UTC().Format(time.RFC3339),
+			Time:          q.Time.UTC().Format(time.RFC3339Nano),
 			Msg:           fmt.Sprintf("%s %s %s %s %s", q.Client, q.Type, domain, q.Action, q.RCode),
 			Source:        StreamValue,
 			Router:        router,
 			Client:        q.Client,
+			ClientIP:      q.ClientIP,
 			Family:        q.Family,
 			Type:          q.Type,
 			Domain:        domain,
@@ -85,7 +88,8 @@ func (v *VictoriaLogs) Write(
 			Blocklist:     q.Blocklist,
 			RCode:         q.RCode,
 			DNSSEC:        q.DNSSEC,
-			Policy:        q.Policy,
+			Rule:          q.Rule,
+			Reason:        q.Reason,
 			ResolveTimeMS: q.ResolveTimeMS,
 			TTL:           q.TTL,
 		}

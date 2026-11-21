@@ -1,12 +1,12 @@
-// Command unbound-exporter copies OPNsense's Unbound DNS query log into
-// VictoriaLogs, so queries (blocked ones especially) can be searched and graphed
-// for as long as VictoriaLogs keeps them, instead of the few minutes the router
-// serves. It is an HTTP server, a Deployable, only for mjolnir's probes
-// (/livez, /readyz and /startupz), and drains gracefully on SIGTERM.
+// Command unbound-exporter copies the router's DNS query log (AdGuard Home on
+// OPNsense, in front of Unbound) into VictoriaLogs, so queries, blocked ones
+// especially, can be searched and graphed for as long as VictoriaLogs keeps
+// them. It is an HTTP server, a Deployable, only for mjolnir's probes (/livez,
+// /readyz and /startupz), and drains gracefully on SIGTERM.
 //
-// Settings come from Mimir (service/exporter_config.json). The router API key
-// comes from the environment, never from Mimir: OPNSENSE_API_KEY and
-// OPNSENSE_API_SECRET.
+// Settings come from Mimir (service/exporter_config.json). The AdGuard Home
+// login comes from the environment, never from Mimir: ADGUARD_USERNAME and
+// ADGUARD_PASSWORD.
 package main
 
 import (
@@ -37,9 +37,9 @@ func main() {
 func run() int {
 	lg := log.GetLogger("unbound-exporter")
 
-	key, secret := os.Getenv("OPNSENSE_API_KEY"), os.Getenv("OPNSENSE_API_SECRET")
-	if key == "" || secret == "" {
-		lg.Error("OPNSENSE_API_KEY and OPNSENSE_API_SECRET must be set")
+	user, password := os.Getenv("ADGUARD_USERNAME"), os.Getenv("ADGUARD_PASSWORD")
+	if user == "" || password == "" {
+		lg.Error("ADGUARD_USERNAME and ADGUARD_PASSWORD must be set")
 		return 1
 	}
 
@@ -47,7 +47,7 @@ func run() int {
 	defer cancel()
 
 	cfg := service.NewExporterConfig(ctx)
-	exporter := service.NewExporter(cfg, data.NewOPNsense(key, secret), data.NewVictoriaLogs(), lg)
+	exporter := service.NewExporter(cfg, data.NewAdGuard(user, password), data.NewVictoriaLogs(), lg)
 	go exporter.Run(ctx)
 
 	r, err := router.New(router.Config{

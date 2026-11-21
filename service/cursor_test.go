@@ -49,70 +49,65 @@ func equal(t *testing.T, got []models.Query, want ...string) {
 
 func TestCursorFirstPollReturnsEverythingOldestFirst(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	fresh, gap := c.Next(newestFirst(q(0, "a"), q(1, "b"), q(2, "c")), 1000)
+	fresh := c.Next(newestFirst(q(0, "a"), q(1, "b"), q(2, "c")))
 	equal(t, fresh, "a", "b", "c")
-	if gap {
-		t.Fatal("first poll can't have a gap")
-	}
 }
 
 func TestCursorSkipsRowsAlreadyReturned(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(0, "a"), q(1, "b")), 1000)
-	fresh, _ := c.Next(newestFirst(q(0, "a"), q(1, "b"), q(2, "c")), 1000)
+	c.Next(newestFirst(q(0, "a"), q(1, "b")))
+	fresh := c.Next(newestFirst(q(0, "a"), q(1, "b"), q(2, "c")))
 	equal(t, fresh, "c")
 }
 
 func TestCursorKeepsRepeatsWithinOneSecond(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(5, "x")), 1000)
+	c.Next(newestFirst(q(5, "x")))
 	// The same query twice more in the same second: one is the row already
 	// returned, the other is new.
-	fresh, _ := c.Next(newestFirst(q(5, "x"), q(5, "x")), 1000)
+	fresh := c.Next(newestFirst(q(5, "x"), q(5, "x")))
 	equal(t, fresh, "x")
-	fresh, _ = c.Next(newestFirst(q(5, "x"), q(5, "x")), 1000)
+	fresh = c.Next(newestFirst(q(5, "x"), q(5, "x")))
 	equal(t, fresh)
 }
 
 func TestCursorPicksUpLateRowsWithinOverlap(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(0, "a"), q(30, "b")), 1000)
+	c.Next(newestFirst(q(0, "a"), q(30, "b")))
 	// A row 20s older than the newest seen shows up late.
-	fresh, _ := c.Next(newestFirst(q(0, "a"), q(10, "late"), q(30, "b")), 1000)
+	fresh := c.Next(newestFirst(q(0, "a"), q(10, "late"), q(30, "b")))
 	equal(t, fresh, "late")
 }
 
 func TestCursorIgnoresRowsOlderThanOverlap(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(100, "a")), 1000)
-	fresh, _ := c.Next(newestFirst(q(10, "ancient"), q(100, "a"), q(101, "b")), 1000)
+	c.Next(newestFirst(q(100, "a")))
+	fresh := c.Next(newestFirst(q(10, "ancient"), q(100, "a"), q(101, "b")))
 	equal(t, fresh, "b")
 }
 
 func TestCursorStartingPointSkipsOlderRows(t *testing.T) {
 	// Resuming after a restart from what VictoriaLogs already holds.
 	c := service.NewCursor(at(100))
-	fresh, _ := c.Next(newestFirst(q(10, "old"), q(90, "written"), q(100, "written"), q(101, "new")), 1000)
+	fresh := c.Next(newestFirst(q(10, "old"), q(90, "written"), q(100, "written"), q(101, "new")))
 	equal(t, fresh, "new")
 }
 
-func TestCursorReportsGapWhenAFullPollIsAllNew(t *testing.T) {
+func TestCursorSinceReachesBackOneOverlapBeforeTheNewest(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(0, "a")), 2)
-	_, gap := c.Next(newestFirst(q(500, "b"), q(501, "c")), 2)
-	if !gap {
-		t.Fatal("want a gap: the full poll starts after everything seen")
+	if !c.Since().IsZero() {
+		t.Fatal("a fresh cursor reads everything")
 	}
-	_, gap = c.Next(newestFirst(q(501, "c"), q(502, "d")), 2)
-	if gap {
-		t.Fatal("no gap: the poll overlaps what was seen")
+	c.Next(newestFirst(q(0, "a"), q(100, "b")))
+	if want := at(100).Add(-time.Minute); !c.Since().Equal(want) {
+		t.Fatalf("since = %v, want %v", c.Since(), want)
 	}
 }
 
 func TestCursorForgetsRowsOutsideOverlap(t *testing.T) {
 	c := service.NewCursor(time.Time{})
-	c.Next(newestFirst(q(0, "a")), 1000)
-	c.Next(newestFirst(q(0, "a"), q(1000, "b")), 1000)
+	c.Next(newestFirst(q(0, "a")))
+	c.Next(newestFirst(q(0, "a"), q(1000, "b")))
 	if n := c.Remembered(); n != 1 {
 		t.Fatalf("remembers %d rows, want 1", n)
 	}

@@ -3,16 +3,16 @@
   "display_name": "Unbound exporter",
   "items": [
     {
-      "name": "opnsense_url",
-      "description": "Base URL of the OPNsense router's API. An IP, so it doesn't depend on the DNS it reads from.",
+      "name": "adguard_url",
+      "description": "Base URL of AdGuard Home's API on the router (HTTPS). An IP, so it doesn't depend on the DNS it reads from.",
       "type": "string",
-      "value": "https://192.168.90.1"
+      "value": "https://192.168.90.1:3443"
     },
     {
-      "name": "opnsense_cert_sha256",
-      "description": "Hex sha256 of the router's self-signed web certificate (DER), which is trusted instead of a CA.",
+      "name": "adguard_cert_sha256",
+      "description": "Hex sha256 of AdGuard Home's self-signed certificate (DER), which is trusted instead of a CA.",
       "type": "string",
-      "value": "9129bb81d98937038387f56d4bc5062864bdd46b478fe11309604c86855521f1"
+      "value": "ba26f69227aa6709fbb532164734946155a72c0809106b434455541ef677db61"
     },
     {
       "name": "router_name",
@@ -22,13 +22,13 @@
     },
     {
       "name": "poll_interval",
-      "description": "How often to read the router's query log, as a Go duration. The router keeps only its newest 1000 queries (about 5 minutes), so keep this well under that.",
+      "description": "How often to read AdGuard Home's query log, as a Go duration. Each poll pages back to the last one, so this sets latency, not completeness.",
       "type": "string",
       "value": "10s"
     },
     {
       "name": "request_timeout",
-      "description": "Timeout for each request to the router or VictoriaLogs, as a Go duration.",
+      "description": "Timeout for each request to AdGuard Home or VictoriaLogs, as a Go duration.",
       "type": "string",
       "value": "15s"
     },

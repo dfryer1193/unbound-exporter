@@ -8,18 +8,17 @@ import (
 )
 
 // overlap is how far back from the newest query already seen a poll still
-// looks for new ones. OPNsense writes its query log in batches, so a row can
-// appear a little after rows newer than it.
+// looks for new ones. AdGuard Home logs a query when its answer is ready, so a
+// slow query can appear after faster ones that started later.
 const overlap = time.Minute
 
 // cursor picks out the queries in each poll that weren't in earlier polls.
 //
-// OPNsense's query log has no ids and only second resolution, and the same
-// query can legitimately happen several times in one second. So the cursor
-// remembers how many copies of each identical row it has already passed on,
-// for the rows within overlap of the newest it has seen.
+// Polls overlap by a minute and log entries have no ids, so the cursor
+// remembers how many copies of each identical entry it has already passed on,
+// for the entries within overlap of the newest it has seen.
 type cursor struct {
-	floor  time.Time // rows at or before it were written before a restart
+	floor  time.Time // entries at or before it were written before a restart
 	newest time.Time
 	seen   map[models.Query]int
 }
@@ -29,19 +28,18 @@ func newCursor(start time.Time) *cursor {
 	return &cursor{floor: start, newest: start, seen: map[models.Query]int{}}
 }
 
-// next returns the queries in rows (newest first, as OPNsense serves them)
-// that weren't returned before, oldest first. gap reports that queries may
-// have been lost: the poll's oldest row is newer than everything seen, so
-// OPNsense may have dropped rows in between.
-func (c *cursor) next(rows []models.Query, limit int) ([]models.Query, bool) {
-	if len(rows) == 0 {
-		return nil, false
+// since is the time a poll has to read back to (zero: everything).
+func (c *cursor) since() time.Time {
+	if c.newest.IsZero() {
+		return time.Time{}
 	}
+	return c.newest.Add(-overlap)
+}
 
-	cutoff := c.newest.Add(-overlap)
-	oldest := rows[len(rows)-1].Time
-	gap := !c.newest.IsZero() && len(rows) >= limit && oldest.After(c.newest)
-
+// next returns the queries in rows (newest first, as AdGuard Home serves them)
+// that weren't returned before, oldest first.
+func (c *cursor) next(rows []models.Query) []models.Query {
+	cutoff := c.since()
 	var fresh []models.Query
 	counts := map[models.Query]int{}
 	for _, q := range slices.Backward(rows) {
@@ -62,11 +60,11 @@ func (c *cursor) next(rows []models.Query, limit int) ([]models.Query, bool) {
 			c.newest = q.Time
 		}
 	}
-	cutoff = c.newest.Add(-overlap)
+	cutoff = c.since()
 	for q := range c.seen {
 		if !q.Time.After(cutoff) {
 			delete(c.seen, q)
 		}
 	}
-	return fresh, gap
+	return fresh
 }

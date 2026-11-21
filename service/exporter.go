@@ -12,8 +12,13 @@ import (
 	"github.com/dfryer1193/unbound-exporter/models"
 )
 
-// rowLimit is the most rows OPNsense returns from its query log.
-const rowLimit = 1000
+// maxRowsPerPoll caps how far back one poll pages through AdGuard Home's log,
+// so a long outage is caught up over several polls rather than in one huge one.
+// Anything older than what a capped poll reaches is skipped (and logged).
+const maxRowsPerPoll = 50000
+
+// firstStartLookback is how much history to copy when VictoriaLogs holds none.
+const firstStartLookback = 10 * time.Minute
 
 // resumeLookback is how far back to look in VictoriaLogs for the newest query
 // already written, when starting.
@@ -33,8 +38,8 @@ const (
 // ExporterConfig (generated from exporter_config.json, kept current by Mimir)
 // satisfies it.
 type Settings interface {
-	GetOpnsenseUrl() string
-	GetOpnsenseCertSha256() string
+	GetAdguardUrl() string
+	GetAdguardCertSha256() string
 	GetRouterName() string
 	GetPollInterval() string
 	GetRequestTimeout() string
@@ -44,7 +49,14 @@ type Settings interface {
 
 // QuerySource is the router's query log.
 type QuerySource interface {
-	RecentQueries(ctx context.Context, s data.OPNsenseSettings) ([]models.Query, error)
+	// QueriesSince returns the queries logged after since, newest first, at
+	// most maxRows; complete is false when it stopped before reaching since.
+	QueriesSince(
+		ctx context.Context,
+		s data.AdGuardSettings,
+		since time.Time,
+		maxRows int,
+	) ([]models.Query, bool, error)
 }
 
 // LogStore is one kind of VictoriaLogs server.
@@ -99,7 +111,7 @@ func (e *Exporter) Healthy() bool {
 }
 
 // resumePoint is the newest query any replica already holds, so a restart
-// neither repeats nor skips queries the router still has.
+// neither repeats nor skips queries.
 func (e *Exporter) resumePoint(ctx context.Context) time.Time {
 	var newest time.Time
 	for _, u := range e.settings.GetVictorialogsUrls() {
@@ -113,7 +125,12 @@ func (e *Exporter) resumePoint(ctx context.Context) time.Time {
 		}
 	}
 	if newest.IsZero() {
-		e.logger.InfoContext(ctx, "Starting from everything the router holds")
+		e.logger.InfoContext(
+			ctx,
+			"Nothing written yet; starting from the last few minutes",
+			"lookback",
+			firstStartLookback,
+		)
 	} else {
 		e.logger.InfoContext(ctx, "Resuming after the newest query already written", "time", newest)
 	}
@@ -121,28 +138,28 @@ func (e *Exporter) resumePoint(ctx context.Context) time.Time {
 }
 
 func (e *Exporter) poll(ctx context.Context) {
-	rows, err := e.source.RecentQueries(ctx, data.OPNsenseSettings{
-		URL:        e.settings.GetOpnsenseUrl(),
-		CertSHA256: e.settings.GetOpnsenseCertSha256(),
+	since := e.cursor.since()
+	if since.IsZero() {
+		since = e.now().Add(-firstStartLookback)
+	}
+	rows, complete, err := e.source.QueriesSince(ctx, data.AdGuardSettings{
+		URL:        e.settings.GetAdguardUrl(),
+		CertSHA256: e.settings.GetAdguardCertSha256(),
 		Timeout:    e.requestTimeout(),
-	})
+	}, since, maxRowsPerPoll)
 	if err != nil {
-		e.logger.ErrorContext(ctx, "Couldn't read the router's query log", "error", err)
+		e.logger.ErrorContext(ctx, "Couldn't read AdGuard Home's query log", "error", err)
 		return
 	}
-
-	fresh, gap := e.cursor.next(rows, rowLimit)
-	if gap {
-		e.logger.WarnContext(
-			ctx,
-			"Queries may have been missed: the router's log moved on further than one poll covers",
-			"oldest_in_poll",
-			rows[len(rows)-1].Time,
-		)
+	if !complete && len(rows) > 0 {
+		e.logger.WarnContext(ctx, "Skipping queries: more were logged since the last poll than one poll reads",
+			"skipped_before", rows[len(rows)-1].Time, "since", since)
 	}
 
+	fresh := e.cursor.next(rows)
+
 	urls := e.settings.GetVictorialogsUrls()
-	limit := max(int(e.settings.GetBufferLimit()), rowLimit)
+	limit := max(int(e.settings.GetBufferLimit()), maxRowsPerPoll)
 	reached := 0
 	var errs []error
 	for _, u := range urls {
