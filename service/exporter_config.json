@@ -1,0 +1,48 @@
+{
+  "type_name": "ExporterConfig",
+  "display_name": "Unbound exporter",
+  "items": [
+    {
+      "name": "opnsense_url",
+      "description": "Base URL of the OPNsense router's API. An IP, so it doesn't depend on the DNS it reads from.",
+      "type": "string",
+      "value": "https://192.168.90.1"
+    },
+    {
+      "name": "opnsense_cert_sha256",
+      "description": "Hex sha256 of the router's self-signed web certificate (DER), which is trusted instead of a CA.",
+      "type": "string",
+      "value": "9129bb81d98937038387f56d4bc5062864bdd46b478fe11309604c86855521f1"
+    },
+    {
+      "name": "router_name",
+      "description": "Value of the router field on every query written, to tell routers apart.",
+      "type": "string",
+      "value": "cyndaquil"
+    },
+    {
+      "name": "poll_interval",
+      "description": "How often to read the router's query log, as a Go duration. The router keeps only its newest 1000 queries (about 5 minutes), so keep this well under that.",
+      "type": "string",
+      "value": "10s"
+    },
+    {
+      "name": "request_timeout",
+      "description": "Timeout for each request to the router or VictoriaLogs, as a Go duration.",
+      "type": "string",
+      "value": "15s"
+    },
+    {
+      "name": "victorialogs_urls",
+      "description": "Every VictoriaLogs replica to write to. Each gets every query (the cluster's replicas are independent copies, written to in parallel).",
+      "type": "string_array",
+      "value": "[\"http://victoria-logs-single-server-0.victoria-logs-single-server.monitoring.svc:9428\", \"http://victoria-logs-single-server-1.victoria-logs-single-server.monitoring.svc:9428\"]"
+    },
+    {
+      "name": "buffer_limit",
+      "description": "Most queries held in memory per VictoriaLogs replica while it can't be reached; beyond this the oldest are dropped.",
+      "type": "int",
+      "value": "100000"
+    }
+  ]
+}
